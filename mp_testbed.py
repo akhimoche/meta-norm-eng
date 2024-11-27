@@ -2,6 +2,8 @@ from meltingpot import substrate
 from matplotlib import pyplot as plt
 from env.mp_llm_env import LLMPrepObject
 import numpy as np
+import utils.proc_funcs
+
 
 # Define the substrate (environment) name
 env_name = 'coins'  # example environment from Melting Pot
@@ -10,6 +12,7 @@ roles = tuple(['default' for _ in range(num_players)])
 # Build the environment using the substrate's configuration
 env = substrate.build(env_name, roles=roles)
 converter = LLMPrepObject('/home/akhimoche/meta-ssd/sprite_labels/coins')
+timestep_dictionary = {"Timestep 0": {}}
 
 # Retrieve the action_spec from the environment
 action_spec = env.action_spec()[0]
@@ -26,24 +29,27 @@ while not done:
     actions = np.random.randint(action_min,action_max+1, num_players)
     # Step through the environment
     timestep = env.step(actions)
-    #plt.imshow(timestep.observation[0]['WORLD.RGB'], interpolation='nearest')
-    #plt.show()
-    processed = converter.image_to_state(timestep.observation[0]['WORLD.RGB'])
-    if t==150:
-        last = timestep.observation
+
+    # Get world RGB from 0th agent (assuming full observability)
+    screen_frame = timestep.observation[0]['WORLD.RGB']
+
+    plt.imshow(screen_frame)
+    plt.show()
+
+    # Get dictionary of states from world RGB frame
+    processed = converter.image_to_state(screen_frame)['global']
+    print(utils.proc_funcs.get_dynamic_info(processed))
+    timestep_dictionary[f"Timestep {t+1}"] = processed
 
     # Check if episode is done
     done = timestep.last()
     t+=1
-# the observation returns a list of agent dictionary observations
-agent_0 = last[0]
-agent_1 = last[1]
 
-screen_frame = agent_0['WORLD.RGB'] # get world RGB frame
-# plt.imshow(screen_frame, interpolation='nearest')
-# plt.show()
-# Get image print
+    if t==10:
+        break
 
-print(processed)
-plt.imshow(screen_frame, interpolation='nearest')
-plt.show()
+
+result = utils.proc_funcs.dynamic_process(timestep_dictionary)
+print("\n Dynamic Process after 10 steps \n")
+for i in range(len(result)):
+    print(result[f"a_{i}"])

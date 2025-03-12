@@ -3,7 +3,7 @@ import json
 import re
 from typing import Dict, List, Tuple, Any
 import heapq
-from operator_func import a_star,move_agent
+from operator_funcs import a_star,move_agent
 import ast
 
 
@@ -11,12 +11,12 @@ def query_ollama(state_info: Dict[str, Any]) -> Dict[str, Any]:
     messages = [{
     "role": "user",
     "content": f"""
-You directly control the actions of a number of agents in a sequential social dilemma (SSD). The SSD is Coins, 
-a Python meltingpot environment where each agent has the action set ACTION_SET = (FORWARD, TURN_ANTICLOCKWISE, TURN_CLOCKWISE). ORIENTATION MATTERS - 
-The player needs to TURN to go forward in a particular direction. This information is given (north, south, east, west) in the observation. Players can collide. 
+You directly control the actions of a number of agents in a sequential social dilemma (SSD). The SSD is Coins,
+a Python meltingpot environment where each agent has the action set ACTION_SET = (FORWARD, TURN_ANTICLOCKWISE, TURN_CLOCKWISE). ORIENTATION MATTERS -
+The player needs to TURN to go forward in a particular direction. This information is given (north, south, east, west) in the observation. Players can collide.
 
 An example of the observation is:
-"p_purple_south: [(1, 1)], coin_purple: [(3, 1)], coin_blue: [(2, 2)], p_blue_south: [(2, 0)]", 
+"p_purple_south: [(1, 1)], coin_purple: [(3, 1)], coin_blue: [(2, 2)], p_blue_south: [(2, 0)]",
 where:
 - `p_purple_south` indicates that player purple is facing south, located at (1,1).
 - `coin_purple` indicates a purple coin at (3,1).
@@ -25,7 +25,7 @@ where:
 
 {json.dumps(state_info)}
 
-**Meta Convention**: "Always prioritize collecting coins that matches the agent's color."  
+**Meta Convention**: "Always prioritize collecting coins that matches the agent's color."
 Analyze the situation and provide only movement recommendations in the **strict JSON format** like below:
 
 ```
@@ -50,13 +50,13 @@ Analyze the situation and provide only movement recommendations in the **strict 
 Remember the output should only contains the json formate response!
 """ }]
 
-        
+
     data = {
         "model": "llama3.3:70b",  # 或其他可用的模型
         "messages": messages,
         "stream": False
     }
-    
+
     try:
         response = requests.post("http://localhost:11434/api/chat", json=data)
         # if response.status_code == 404:
@@ -68,10 +68,10 @@ Remember the output should only contains the json formate response!
         #         "stream": False
         #     }
         #     response = requests.post(old_url, json=old_data)
-        
+
         response.raise_for_status()
         result = response.json()
-        
+
 
         # 处理不同的响应格式
         if "message" in result:
@@ -80,7 +80,7 @@ Remember the output should only contains the json formate response!
             return {"response": result["response"]}
         else:
             return result
-            
+
     except requests.exceptions.RequestException as e:
         print(f"Error querying Ollama: {e}")
         print(f"URL tried: {self.ollama_url}")
@@ -134,7 +134,7 @@ def main():
         'coin_purple': [(4, 13)],
         'p_blue_south': [(22, 17)]
     }
-    
+
 
     ollama_response = query_ollama(observation)
     if ollama_response:

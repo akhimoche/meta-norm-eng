@@ -13,7 +13,7 @@ def get_dynamic_info(dict_of_states):
     positions from a dictionary of states by removing the
     wall/ground keys and assoc. values
     """
-    keys_to_avoid = {'wall', 'ground'}
+    keys_to_avoid = {'wall', 'ground', 'yellow_patch', 'sand', 'grass'}
     sub_dict = {}
 
     # Iterate over the items in dict_of_states

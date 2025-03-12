@@ -8,7 +8,7 @@ import utils.operator_funcs
 
 # Define the substrate (environment) name
 env_name = 'commons_harvest__open'  # example environment from Melting Pot
-num_players=7
+num_players=5
 roles = tuple(['default' for _ in range(num_players)])
 # Build the environment using the substrate's configuration
 env = substrate.build(env_name, roles=roles)
@@ -79,7 +79,7 @@ if sprites_already_found is True:
 
 done = False
 t=0
-window_size = 1000
+window_size = 50
 while not done:
     # Example: random actions for each agent
     actions = np.random.randint(action_min,action_max+1, num_players)
@@ -92,8 +92,8 @@ while not done:
     # Get dictionary of states from world RGB frame
     processed = converter.image_to_state(screen_frame)['global']
 
-    plt.imshow(screen_frame)
-    plt.show()
+    # plt.imshow(screen_frame)
+    # plt.show()
 
     # total system reward is social welfare
     processed["social_welfare"] = [sum(timestep.reward).item()] # turn into list for iteration in get_dynamic info

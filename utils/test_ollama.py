@@ -6,6 +6,15 @@ import heapq
 from operator_funcs import a_star,move_agent
 import ast
 
+# This is the file where LLM integration is tackled. 
+# Note that the metaconventions/relevant actions discussed are for the Coins envt, not Commons Harvest 
+# General outline: 
+# 1. Sends a parsed (RGB-> Natual language dicrionary/grid) observation to the local LLM via Ollama API.
+    # Includes meta-conventions for the speicfic game (eg prioritise coins))
+# 2. LLM returns a JSON response with movement recommendations for each agent, which is parsed back into Python. 
+# 3. A* and operator_funcs are used to compute the actual movement actions based on the LLM's recommendations.
+# 4. Move agent to execute 
+# Still no potential refusal mechanism for the agent? (emphasised in Notion)
 
 def query_ollama(state_info: Dict[str, Any]) -> Dict[str, Any]:
     messages = [{

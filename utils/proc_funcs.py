@@ -1,3 +1,4 @@
+# file contains all the key helper functions used for extracting dynamic information from the environment observations
 def get_general_info(dict_of_states):
     """ Gets the general information from a dictionary of states
     such as walls and ground, returns this info in dictionary.
@@ -25,7 +26,7 @@ def get_dynamic_info(dict_of_states):
     return sub_dict
 
 
-def get_changes_symm(dict_of_states_0, dict_of_states_1):
+def get_changes_symm(dict_of_states_0, dict_of_states_1): #"symmetric difference"-includes both what appeared and what disappeared?
     """ Takes two successive timesteps dictionaries, remove
     general information and return dictionary of changes
     """
@@ -50,6 +51,8 @@ def get_changes_symm(dict_of_states_0, dict_of_states_1):
     return differences
 
 def get_changes_diff(dict_of_states_0, dict_of_states_1):
+    #This is the one used in mp_testbed.py, where it’s used to identify what new entity appeared in each sprite patch. 
+    # USed paritcularly when rotating to figure out which agent moved. (in the calibration phase of mp_testbed)
     """ Takes two successive timesteps dictionaries, remove
     general information and return dictionary of changes
     """

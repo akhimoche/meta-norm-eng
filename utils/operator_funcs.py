@@ -1,3 +1,6 @@
+#utility functions for spatial reasoning and action planning. 
+# These are useful if you're trying to guide agents with logic rather than learning alone (e.g. handing out conventions or routes from an LLM planner)
+# Heuristics here were used as a baseline to compare with LLM policy planning? 
 import heapq
 import numpy as np
 
@@ -103,6 +106,10 @@ def get_movement_actions(operator_output, colour_dict, num_players):
     of coordinates which are fed into A*. The first leg of the
     located path is used. operator_output should be in dictionary form.
     """
+    # to be used after a planner (like an LLM) has output an operator_output dictionary saying smth like:
+    # "Move the red agent from (2,2) to (4,5), avoiding obstacles at [(3,3), (4,3)]"
+    # This is how we translate commands form LLM into actions, but:
+    # 1. Not used in mp_testbed, ig since it's meant to be a baseline? 2. No refusal mechanism for agent? 
     move_actions = np.zeros((num_players),dtype=int)
 
     # do A* search for each agent using operator_output
@@ -111,7 +118,7 @@ def get_movement_actions(operator_output, colour_dict, num_players):
         search_tuple = operator_output[agent_colour] # (init, fin, obst)
         path = a_star(search_tuple)  # get path from init to fin
         coords_i = path[0], path[1] # we only want the first move
-        move_i = move_agent(path[0], path[1])
+        move_i = move_agent(path[0], path[1]) #
 
     return move_actions
 

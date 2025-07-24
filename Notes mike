@@ -1,0 +1,39 @@
+Commons harvest open description (from DM file) - this is what's playing out in mp_testbed
+
+Apples are spread around the map and can be consumed for a reward of 1. Apples
+that have been consumed regrow with a per-step probability that depends on the
+number of uneaten apples in a `L2` norm neighborhood of radius 2 (by default).
+After an apple has been eaten and thus removed, its regrowth probability depends
+on the number of uneaten apples still in its local neighborhood. With standard
+parameters, it the grown rate decreases as the number of uneaten apples in the
+neighborhood decreases and when there are zero uneaten apples in the
+neighborhood then the regrowth rate is zero. As a consequence, a patch of apples
+that collectively doesn't have any nearby apples, can be irrevocably lost if all
+apples in the patch are consumed. Therefore, agents must exercise restraint when
+consuming apples within a patch. Notice that in a single agent situation, there
+is no incentive to collect the last apple in a patch (except near the end of the
+episode). However, in a multi-agent situation, there is an incentive for any
+agent to consume the last apple rather than risk another agent consuming it.
+This creates a tragedy of the commons from which the substrate derives its name.
+
+Note: Big yellow shape in the animation is probably the fire zap weapon, an action the agents can take 
+to stun/punish teammates? 
+
+-mp_testbed simulation seems to be a lot more random/absent of strategy? 
+Compared to DM's demo for example: https://www.youtube.com/watch?v=lZ-qpPP4BNE
+-> Yes, this is indicated in the code. This is an example/placeholder/baseline. 
+Can then be replaced by an actual policy (either using a heuristic algorithm OR an LLM assigned policy)
+
+    -Question: Still not sure how the mechanism of "turning down a proposed policy by an LLM works?"
+
+    -In mp_testbed, we assume full observability afterall? Are we sticking with that? 
+
+    -Saw lots of setups for LLM integration but not sure where that's happening still? eg converting to dictionary state, 
+    but then it's supposed to be fed into an LLM and a policy to be obtained? 
+
+-LLM Prep Object (in mp_llm_env.py): Function to turn turns visual input (RGB frames) into structured, symbolic representations of the environment, eg:
+{'p_blue_north': [(3, 4)], 'red_apple': [(7, 9)], ...} <- these can then be processed by an LLM
+
+       
+
+

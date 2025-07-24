@@ -18,7 +18,8 @@ class LLMPrepObject:
         self.load_sprite_labels(label_folder)
         #self.knn = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(self.sprites)
 
-    def load_sprite_labels(self, label_folder: Path):
+    def load_sprite_labels(self, label_folder: Path): 
+        #Loads reference images for all known sprites, turns them into flat numpy vectors
         sprites = []
         sprite_labels = []
         for filename in os.listdir(label_folder):
@@ -38,6 +39,10 @@ class LLMPrepObject:
         return None
 
     def image_to_state(self, image: np.ndarray):
+        #Key method/fucntion to convert an image to a symbolic dictionary of entities on the grid. 
+        # 1. Splits the full RGB frame into 8x8 sprite patches.
+        # 2. Matches each patch to its corresponding label from sprite_labels/.
+        # 3. Stores each label + position into a dictionary of the form:
 
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
@@ -93,6 +98,8 @@ class LLMPrepObject:
 
 
     def get_ego_state(self, state, player_id):
+        # Not used in mp_testbed.py, but from what I gathered, this seems to set up a template
+        # for extracting partial (egocentric) observations, possibly useful later if players aren’t assumed to have full observability?
         # Extract player's position and orientation
         global_state = state['global']
         for k, v in global_state.items():

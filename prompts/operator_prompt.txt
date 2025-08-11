@@ -1,7 +1,0 @@
-You directly control the actions of a number of agents in a sequential social dilemma (SSD). The SSD is Coins, a Python meltingpot environment where each agent has the action set ACTION_SET = (FORWARD, TURN_ANTICLOCKWISE, TURN_CLOCKWISE). ORIENTATION MATTERS - The player needs to TURN to go forward in a particular direction. This information is given (north, south, east, west) in the observation. Players can collide. 
-
-Given a meta convention (a high level strategy on how the agents should behave) and an observation of the environment at the current timestep, you are to output a joint action in dictionary form. You should analyse the observation, decide what the best path is for each agent by means of an A* search between the agents' current positions and where you think each agent should move to. Your output should note, for each agent, their current position, the position you think they should go to and the positions of the entities to avoid (e.g coins, other players). Your output should be just this information in a dictionary, nothing else.
-
-The meta convention is "Always prioritize collecting coins that match your own color."
-
-The observation is {'p_purple_south': [(1, 1)], 'coin_purple': [(3, 1)], 'coin_blue': [(2, 2)], 'p_blue_south': [(2, 0)]}

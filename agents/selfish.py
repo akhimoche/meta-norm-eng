@@ -17,17 +17,21 @@
 #         and its unique color label (from calibration).
 #   - Uses the converter from env/mp_llm_env.py to convert the environment’s RGB frame
 #     into a symbolic "state" (dictionary of object labels → positions).
-#   - Does NOT directly call utils/operator_funcs — pathfinding logic (_a_star) is implemented locally.
+#   - Uses utils/operator_funcs.a_star (or a_star_with_norms) for pathfinding.
 # --------------------------------------------------------------------
 
 from .base_agent import BaseAgent, ACTION_MAP
 from typing import Dict, List, Tuple, Optional, Set
 import numpy as np
 
+from utils.operator_funcs import a_star as op_a_star, a_star_with_norms
+from utils.norms.growth_reserve_local import GrowthReserveLocal
+
 # Translation-only actions (move in the grid without turning or zapping).
 # These correspond to:
 #   1 = FORWARD, 2 = BACKWARD, 3 = STEP_LEFT, 4 = STEP_RIGHT
 FALLBACK_TRANSLATIONS = np.array([1, 2, 3, 4], dtype=int)
+
 
 class SelfishAgent(BaseAgent):
     """
@@ -44,7 +48,13 @@ class SelfishAgent(BaseAgent):
         action_max: int,
         converter,       # Object that can turn RGB frames into symbolic states
         color: str,      # Agent's color label from calibration (e.g., "red")
-        seed: int | None = None
+        seed: int | None = None,
+        # ---- optional norm wiring (defaults keep behavior identical to before) ----
+        use_norms: bool = False,          # enable the soft local-reserve norm
+        reserve_K: int = 3,               # K_local: keep >= 3 apples within L2 radius
+        reserve_radius: float = 2.0,      # L2 radius used by the substrate
+        norm_penalty: float = 5.0,        # step penalty when breaching the rule
+        epsilon: float = 0.0              # ε-compliance: prob. to ignore soft penalty
     ):
         # Call BaseAgent constructor to set RNG, action map, etc.
         super().__init__(agent_id, seed=seed, action_map=ACTION_MAP)
@@ -54,6 +64,13 @@ class SelfishAgent(BaseAgent):
         self.action_max = int(action_max)
         self.converter = converter
         self.color = color
+
+        # --- Optional norm (soft local reserve: leave >= K apples within L2=radius) ---
+        self.use_norms = bool(use_norms)
+        self.norm = GrowthReserveLocal(
+            radius=reserve_radius, K=reserve_K, penalty=norm_penalty, seed=seed or 0
+        )
+        self.norm.set_epsilon(str(self.id), float(epsilon))
 
     # ----------------------------------------------------------------
     # HELPER: Convert observation frame → symbolic state dictionary
@@ -104,58 +121,6 @@ class SelfishAgent(BaseAgent):
         return (max_x + 1, max_y + 1)  # +1 because coordinates are 0-indexed
 
     # ----------------------------------------------------------------
-    # HELPER: A* pathfinding implementation
-    # ----------------------------------------------------------------
-    @staticmethod
-    def _a_star(
-        start: Tuple[int, int],
-        goal: Tuple[int, int],
-        obstacles: Set[Tuple[int, int]],
-        grid_size: Tuple[int, int]
-    ) -> Optional[List[Tuple[int, int]]]:
-        """
-        Finds a shortest path from start to goal using 4-directional A* search.
-        Returns the path as a list of coordinates [start, ..., goal],
-        or None if no path exists.
-        """
-        import heapq
-        def h(a, b): return abs(a[0]-b[0]) + abs(a[1]-b[1])  # Manhattan distance
-
-        w, hgt = grid_size
-        nbrs = [(1,0), (-1,0), (0,1), (0,-1)]  # Right, Left, Down, Up
-        openh = [(h(start, goal), start)]
-        g = {start: 0}  # cost-so-far
-        came = {}
-        closed = set()
-
-        while openh:
-            _, cur = heapq.heappop(openh)
-            if cur == goal:
-                # Reconstruct path
-                path = [cur]
-                while cur in came:
-                    cur = came[cur]
-                    path.append(cur)
-                path.reverse()
-                return path
-            if cur in closed:
-                continue
-            closed.add(cur)
-
-            for dx, dy in nbrs:
-                nx, ny = cur[0]+dx, cur[1]+dy
-                if not (0 <= nx < w and 0 <= ny < hgt): continue
-                n = (nx, ny)
-                if n in obstacles: continue
-                cand = g[cur] + 1
-                if cand < g.get(n, 1e9):
-                    g[n] = cand
-                    came[n] = cur
-                    f = cand + h(n, goal)
-                    heapq.heappush(openh, (f, n))
-        return None
-
-    # ----------------------------------------------------------------
     # MAIN: Decide what action to take this step
     # ----------------------------------------------------------------
     def act(self, obs):
@@ -181,8 +146,11 @@ class SelfishAgent(BaseAgent):
         if start is None:
             return int(self.rng.choice(FALLBACK_TRANSLATIONS))
 
-        # Step 3: Find apples
-        apples = self._collect_positions(state, lambda k: "apple" in k)
+        # Step 3: Find apples (prefer exact live label; fallback to substring)
+        apples = state.get("apple", [])
+        if not apples:
+            # fallback, but exclude any 'wait' variants
+            apples = self._collect_positions(state, lambda k: ("apple" in k) and ("wait" not in k.lower()))
 
         # Step 4: Build obstacle set
         walls  = set(self._collect_positions(state, lambda k: "wall" in k))
@@ -192,17 +160,54 @@ class SelfishAgent(BaseAgent):
         # Step 5: Compute grid size
         grid_size = self._grid_size(state)
 
-        # Step 6: Find nearest reachable apple with A*
+        # (Norm hook) keep the norm's apple set up to date
+        self.norm.update_apples(set(apples))
+
+         # Step 6: Find best apple by effective cost = steps + expected penalty
         best_path = None
-        best_len = 10**9
+        best_score = float("inf")
+        eid = str(self.id)
+
         for goal in apples:
-            path = self._a_star(start, goal, obstacles, grid_size)
-            if path is not None and len(path) < best_len:
-                best_len = len(path)
+            # If norms are ON and ε == 0, skip apples that would breach K.
+            # This makes ε=0 behave "almost hard" so the effect is obvious.
+            if self.use_norms and self.norm.epsilon_by_agent.get(eid, 0.0) == 0.0:
+                if self.norm.would_breach(goal):
+                    continue
+
+            # Plan a path to this apple
+            if self.use_norms:
+                path = a_star_with_norms(
+                    start, goal, obstacles, grid_size,
+                    agent_id=eid,
+                    norms_active=True,
+                    norms_blocked=self.norm.is_blocked,     # always False in soft version
+                    norms_penalty=self.norm.step_penalty
+                )
+            else:
+                path = op_a_star(start, goal, obstacles, grid_size)
+
+            # Treat [] or a 1-node path as "no usable path"
+            if not path or len(path) < 2:
+                continue
+
+            # Base cost = number of steps (edges)
+            base_steps = len(path) - 1
+
+            # Add expected penalty for the *final step* into the apple (deterministic)
+            if self.use_norms:
+                exp_pen = self.norm.expected_step_penalty(eid, path[-2], path[-1])
+                score = base_steps + exp_pen
+            else:
+                score = base_steps
+
+            # Keep the best (lowest) effective score
+            if score < best_score:
+                best_score = score
                 best_path = path
 
         # Step 7: No reachable apple → fallback random move
-        if best_path is None or len(best_path) < 2:
+        if not best_path or len(best_path) < 2:
             return int(self.rng.choice(FALLBACK_TRANSLATIONS))
 
         # Step 8: Take the first step toward the apple
@@ -218,4 +223,3 @@ class SelfishAgent(BaseAgent):
         else:          action_id = int(self.rng.choice(FALLBACK_TRANSLATIONS))
 
         return action_id
-

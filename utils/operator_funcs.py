@@ -20,6 +20,8 @@ Key ideas:
 import heapq
 import numpy as np
 from typing import Dict, Tuple, Set, List
+from typing import Optional, Callable
+
 
 # Type alias for coordinates on the grid
 Coord = Tuple[int, int]
@@ -78,6 +80,142 @@ def a_star(start: Coord, goal: Coord, obstacles: Set[Coord], grid_size: Tuple[in
 
     return []  # No path found
 
+# ---------------------------------------------------------------------------
+# A* with optional "norm" hooks (non-breaking; existing callers unaffected)
+# ---------------------------------------------------------------------------
+
+# For clarity and type safety, we name the two hook signatures we expect:
+# - NormsBlocked:   hard enforcement → treat cell as a blocked obstacle
+# - NormsPenalty:   soft enforcement → add extra step cost but keep cell walkable
+NormsBlocked = Callable[[str, Coord], bool]                      # (agent_id, cell) -> bool
+NormsPenalty = Callable[[str, Coord, Coord], float]              # (agent_id, cur, nxt) -> penalty >= 0
+
+def a_star_with_norms(
+    start: Coord,
+    goal: Coord,
+    obstacles: Set[Coord],
+    grid_size: Tuple[int, int],
+    *,
+    agent_id: str = "agent",
+    norms_active: bool = True,                      # ← global on/off for norms (easy ablations)
+    norms_blocked: Optional[NormsBlocked] = None,   # hard: extra "unwalkable" cells
+    norms_penalty: Optional[NormsPenalty] = None,   # soft: extra cost per expanded step
+    max_expansions: int = 20_000,                   # safety valve against infinite loops
+) -> List[Coord]:
+    """
+    A* variant with *optional* norm hooks.
+
+    Compatibility:
+      - If norms_active=False, or both hooks are None → behaves like plain A*.
+      - Input/Output matches your existing planner: returns a full path [start,...,goal] or [] if no path.
+
+    Coordinates:
+      - We use (row, col) indexing with 4-connected neighbors.
+      - grid_size = (rows, cols)
+      - Manhattan distance is an admissible heuristic under these moves.
+
+    Hooks:
+      - norms_blocked(agent_id, cell) -> bool
+          Return True to treat 'cell' as blocked (like a wall/tree).
+      - norms_penalty(agent_id, cur, nxt) -> float
+          Non-negative extra cost added to the usual step cost (1.0) when expanding cur→nxt.
+
+    Common uses:
+      - Hard spatial rules (keep-out zones, temporary moats).
+      - Soft spatial rules (corridors, crowding costs, reserve areas).
+      - ε-compliance can be implemented *inside* norms_penalty by occasionally returning 0.
+
+    Returns:
+      - list[Coord]: [start, ..., goal] if reachable; [] otherwise.
+    """
+    # Trivial case: already there
+    if start == goal:
+        return [start]
+
+    # Admissible heuristic for 4-connected grids: Manhattan distance
+    def heuristic(a: Coord, b: Coord) -> int:
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    # 4-connected moves: Up, Right, Down, Left (in row/col space)
+    neighbors = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    rows, cols = grid_size
+
+    # --- Helper: decide if a single cell is "hard blocked" (not walkable) ---
+    def hard_blocked(cell: Coord) -> bool:
+        r, c = cell
+        # 1) Out of bounds → blocked
+        if not (0 <= r < rows and 0 <= c < cols):
+            return True
+        # 2) Physics obstacles (walls/trees) → blocked
+        if cell in obstacles:
+            return True
+        # 3) Norm hard blocks (only if norms are "active") → blocked
+        if norms_active and norms_blocked is not None and norms_blocked(agent_id, cell):
+            return True
+        return False
+
+    # open_set holds tuples (f_score, tie_breaker, node).
+    # - f_score = g + h (classic A*)
+    # - tie_breaker = current g_score, so we slightly prefer nodes with smaller g when f ties,
+    #   which tends to produce straighter, less "wiggly" paths without changing optimality.
+    open_set: List[Tuple[float, float, Coord]] = []
+    import heapq
+    heapq.heappush(open_set, (heuristic(start, goal), 0.0, start))
+
+    came_from: Dict[Coord, Coord] = {}   # backpointers for path reconstruction
+    g_score: Dict[Coord, float] = {start: 0.0}  # best-known cost from start to node
+
+    expansions = 0
+    while open_set:
+        _, _, current = heapq.heappop(open_set)
+
+        # Goal test on pop (standard A*): we pop in increasing f order, so first time is optimal
+        if current == goal:
+            # Reconstruct path backwards via came_from
+            path = [current]
+            while current in came_from:
+                current = came_from[current]
+                path.append(current)
+            path.reverse()
+            return path
+
+        expansions += 1
+        if expansions > max_expansions:
+            # Safety stop: treat as "no path" if we expanded too much
+            return []
+
+        # Explore 4-connected neighbors
+        for dx, dy in neighbors:
+            nb = (current[0] + dx, current[1] + dy)
+
+            # Skip if this neighbor is not walkable (bounds / physics / hard norms)
+            if hard_blocked(nb):
+                continue
+
+            # Base step cost is 1.0 for any valid 4-connected move.
+            step_cost = 1.0
+
+            # If soft norms are active, add their extra penalty (e.g., entering a soft zone).
+            # Returning 0.0 means "no extra penalty".
+            if norms_active and norms_penalty is not None:
+                extra = float(norms_penalty(agent_id, current, nb))
+                # Defensive clamp: penalties should not be negative
+                if extra < 0.0:
+                    extra = 0.0
+                step_cost += extra
+
+            # Classic A*: tentative cost of reaching neighbor through 'current'
+            cand = g_score[current] + step_cost
+
+            # If we found a cheaper way to nb, record it and push to frontier
+            if cand < g_score.get(nb, float("inf")):
+                came_from[nb] = current
+                g_score[nb] = cand
+                f = cand + heuristic(nb, goal)
+                heapq.heappush(open_set, (f, cand, nb))
+
+    # Exhausted the frontier without reaching the goal
+    return []
 
 # ---------------------------------------------------------------------------
 # Orientation helper

@@ -19,5 +19,10 @@ Zone.Identifier
 # Jupyter notebook checkpoints (if any)
 .ipynb_checkpoints/
 
+# Experiment data (numpy arrays, saved simulations)
+data/
+
+# LLM norm generator (contains API keys)
+scripts/llm_norm_generator.py
 
 

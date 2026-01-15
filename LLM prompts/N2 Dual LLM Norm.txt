@@ -1,0 +1,316 @@
+# Norm Implementation Specialist
+
+You will receive a MetaNorm (abstract strategy template) and must implement it as concrete Python code for a specific environment.
+
+---
+
+## **MetaNorm Input**
+
+```python
+meta_norm = {
+    "conceptual_strategy": "Pulse–Rotation with Permanent Refugia",
+    "reasoning": (
+        "We prevent overexploitation by never allowing the whole space to be accessible at once. "
+        "The grid is partitioned (via simple modular arithmetic on (col,row)) into K disjoint tiles. "
+        "Only one (or a small window of) tile(s) is open per timestep according to a deterministic, time-only schedule f(t); all other tiles are blocked. "
+        "A small fraction R of cells are never opened (permanent refugia) so seed stock and density-dependent regrowth persist even if agents overharvest open tiles. "
+        "Because agents only see obstacles and pursue nearest resources with A*, they naturally flow toward currently-open cells without needing global state. "
+        "Rotation creates long recovery intervals (cooldowns) for each tile, allowing density to rebuild and diffuse across boundaries before it reopens. "
+        "A multi-scale (nested) rotation option creates coarse- and fine-grained closures simultaneously, improving robustness across patch sizes. "
+        "Deterministic jitter (time-only phase shifts) prevents the same boundary from reopening first every cycle, mitigating edge depletion. "
+        "Key invariants: (i) at least R fraction is always protected; (ii) at most W/K of the grid is open at any t; (iii) each tile's open duty cycle is small enough for resources to regrow above collapse thresholds before the tile reopens."
+    ),
+    "code_template": '''
+# ---------------------------------------------
+# MetaNorm: Pulse–Rotation with Permanent Refugia
+# ---------------------------------------------
+# PURPOSE:
+#   Given time t and grid coordinates (col,row), return whether a cell is BLOCKED.
+#   Agents treat BLOCKED cells as obstacles alongside walls. No external state needed.
+
+from typing import Iterable, Tuple, Dict, Callable
+
+# ---------- PLACEHOLDER PARAMS (fill via your environment) ----------
+Params = Dict[str, object]
+# Required keys (see parameter_framework for meaning):
+#   GRID_W:int, GRID_H:int
+#   K:int                 # number of rotation tiles (partition count)
+#   W:int                 # width of open window in tile-space per timestep (1..K)
+#   CYCLE:int             # timesteps for a full rotation over all tiles
+#   REFUGIA_FRACTION:float  # 0.0..1.0 permanently closed share
+#   REFUGIA_SALT:int      # integer seed for deterministic hash
+#   TILE_HASH:(int,int,int)  # coefficients (ax, by, c) for tile index
+#   JITTER_FN:Callable[[int], int]   # time-only phase jitter in [0..K-1]
+#   MULTISCALE:dict | None  # optional nested rotation layer(s)
+#   EDGE_BUFFER:int        # optional protective band (in cells) around refugia/closed tiles
+#   OPEN_PATTERN:str       # 'exact', 'stripe', or 'dither' (thins openings within open tiles)
+
+def lcg_hash(x:int, y:int, salt:int) -> int:
+    # Deterministic, cheap integer hash (no randomness at runtime).
+    return (1103515245 * (x + 31*y + 131*salt) + 12345) & 0x7fffffff
+
+def tile_index(x:int, y:int, K:int, a:int, b:int, c:int) -> int:
+    # Map (x,y) -> {0..K-1}; choose a,b co-prime with K to avoid bias.
+    return ((a*x + b*y + c) % K + K) % K
+
+def in_refugia(x:int, y:int, params:Params) -> bool:
+    """Permanent refugia mask using spatial hashing to reach target fraction deterministically."""
+    frac = params["REFUGIA_FRACTION"]
+    if frac <= 0.0: return False
+    salt = params["REFUGIA_SALT"]
+    h = lcg_hash(x, y, salt)
+    # Normalize hash into [0,1)
+    return (h / float(0x80000000)) < frac
+
+def edge_buffered(x:int, y:int, blocked_mask:Callable[[int,int],bool], buf:int) -> bool:
+    """Expand any blocked/refugia region by a buffer to reduce boundary overharvest."""
+    if buf <= 0: return False
+    for dx in range(-buf, buf+1):
+        for dy in range(-buf, buf+1):
+            if blocked_mask(x+dx, y+dy):
+                return True
+    return False
+
+def open_in_tile(x:int, y:int, params:Params, t:int) -> bool:
+    """Return True if the cell (x,y) is in an OPEN tile at time t."""
+    K = params["K"]; W = params["W"]; period = params["CYCLE"]
+    a,b,c = params["TILE_HASH"]
+    base = (t % period) * K // period  # linear sweep over tiles per cycle
+    phase = (base + params["JITTER_FN"](t)) % K
+    idx = tile_index(x, y, K, a, b, c)
+    # Windowed openness: open if idx in [phase, phase+W-1] modulo K
+    return ((idx - phase) % K) < W
+
+def thinning_pattern(x:int, y:int, t:int, mode:str) -> bool:
+    """
+    Within an OPEN tile, optionally thin to reduce instantaneous pressure.
+    - 'exact': no thinning (all cells in open tile are open)
+    - 'stripe': open only cells where (x + t) % 2 == 0   (50% capacity)
+    - 'dither': open cells where (x*3 + y*5 + t) % 4 != 0  (~75% capacity)
+    """
+    if mode == "exact":
+        return True
+    elif mode == "stripe":
+        return ((x + t) & 1) == 0
+    elif mode == "dither":
+        return ((x*3 + y*5 + t) % 4) != 0
+    else:
+        return True
+
+def multiscale_gate(x:int, y:int, params:Params, t:int) -> bool:
+    """
+    Optional nested rotation layers (e.g., K=8 coarse with W=1; nested K=3 micro with W=1).
+    A cell is OPEN only if it passes all layers.
+    """
+    ms = params.get("MULTISCALE")
+    if not ms: return True
+    # Each layer is a dict with its own K, W, CYCLE, TILE_HASH, JITTER_FN
+    for layer in ms.get("layers", []):
+        K = layer["K"]; W = layer["W"]; period = layer["CYCLE"]
+        a,b,c = layer["TILE_HASH"]
+        base = (t % period) * K // period
+        phase = (base + layer["JITTER_FN"](t)) % K
+        idx = tile_index(x, y, K, a, b, c)
+        if ((idx - phase) % K) >= W:
+            return False
+    return True
+
+def is_blocked(x:int, y:int, t:int, params:Params) -> bool:
+    """
+    Core MetaNorm API:
+    Returns True if (x,y) should be BLOCKED at timestep t.
+    Compose permanent refugia, rotating closures, edge buffers, and thinning.
+    """
+    W = params["GRID_W"]; H = params["GRID_H"]
+    if not (0 <= x < W and 0 <= y < H):
+        return True  # out of bounds treated as blocked
+
+    # 1) Permanent refugia
+    if in_refugia(x, y, params):
+        return True
+
+    # 2) Rotation openness across one or more scales
+    if not open_in_tile(x, y, params, t):
+        return True
+    if not multiscale_gate(x, y, params, t):
+        return True
+
+    # 3) Thinning inside open tiles to cap instantaneous effort
+    if not thinning_pattern(x, y, t, params.get("OPEN_PATTERN","exact")):
+        return True
+
+    # 4) Optional protective edge buffers around any blocked region
+    buf = params.get("EDGE_BUFFER", 0)
+    if buf > 0:
+        # Define a closure to check 'already blocked' without recursion:
+        def preblocked(i,j):
+            return in_refugia(i,j,params) or (not open_in_tile(i,j,params,t)) or (not multiscale_gate(i,j,params,t)) or (not thinning_pattern(i,j,t,params.get("OPEN_PATTERN","exact")))
+        if edge_buffered(x, y, preblocked, buf):
+            return True
+
+    return False
+
+def blocked_positions_at_time(t:int, params:Params) -> Iterable[Tuple[int,int]]:
+    """Enumerate all blocked cells for timestep t (supply this to your agents as norm obstacles)."""
+    W = params["GRID_W"]; H = params["GRID_H"]
+    for y in range(H):
+        for x in range(W):
+            if is_blocked(x, y, t, params):
+                yield (x, y)
+
+# ---------- DETERMINE JITTER (example placeholders) ----------
+def no_jitter(t:int) -> int: return 0
+def slow_spin_jitter(t:int) -> int:
+    # rotates phase one step every J steps; no state needed
+    J = 7
+    return (t // J) % 1000000  # reduced modulo K within open_in_tile
+
+# ---------- NOTES ----------
+# • Agents need only treat blocked cells as obstacles. No counts, IDs, or peer locations required.
+# • Choose K, W, and CYCLE so each tile's closed duration >> expected regrowth time.
+# • REFUGIA_FRACTION > 0 guarantees nonzero seed stock regardless of mistakes elsewhere.
+# • MULTISCALE can be omitted for simplicity, or used to add robustness across patch sizes.
+# • EDGE_BUFFER adds always-closed 'guard bands' to reduce boundary collapses.
+# • OPEN_PATTERN throttles instantaneous effort without requiring agent awareness.
+''',
+    "parameter_framework": {
+        "spatiotemporal_partitioning": {
+            "K": "Number of disjoint rotation tiles; larger K = smaller tiles, longer recovery per tile.",
+            "W": "Open-window width in tile index space per timestep (1..K). Controls fraction open at once (≈ W/K).",
+            "CYCLE": "Timesteps for a full sweep across all tiles; sets the cooldown length per tile (~CYCLE * (K-W)/K).",
+            "TILE_HASH": "Coefficients (a,b,c) for tile indexing; choose a,b co-prime with K to avoid spatial bias."
+        },
+        "protection_baseline": {
+            "REFUGIA_FRACTION": "Permanent always-closed share (e.g., 0.05–0.20). Ensures nonzero seed stock and density nuclei.",
+            "REFUGIA_SALT": "Deterministic salt for hashing refugia locations so they are well-dispersed."
+        },
+        "pressure_throttling": {
+            "OPEN_PATTERN": "Within open tiles, optionally thin access: 'exact' (100%), 'stripe' (~50%), 'dither' (~75%).",
+            "EDGE_BUFFER": "Guard band width (cells) around any blocked region to mitigate edge overharvest."
+        },
+        "phase_management": {
+            "JITTER_FN": "Time-only phase shift to avoid reopening the same boundaries first each cycle (e.g., slow_spin_jitter)."
+        },
+        "multiscale_resilience": {
+            "MULTISCALE": "Optional nested layers: list of {K,W,CYCLE,TILE_HASH,JITTER_FN}. All layers must approve a cell to open."
+        },
+        "environment_tuning_guidelines": {
+            "ecological_timescale": "Pick CYCLE and K so closed duration per tile ≫ regrowth half-life; if unknown, err longer.",
+            "geometry": "Choose K to produce tiles larger than the minimum viable patch but smaller than diffusion scale.",
+            "agent_load": "If many agents, reduce W and/or use 'stripe'/'dither' to cap simultaneous access.",
+            "risk_appetite": "Increase REFUGIA_FRACTION and EDGE_BUFFER in fragile systems; decrease for robust systems."
+        }
+    }
+}
+```
+
+
+---
+
+## **Target Environment: Commons Harvest Open**
+
+### **Map Layout** (24×18 grid):
+```
+WWWWWWWWWWWWWWWWWWWWWWWW
+WAAA    A      A    AAAW
+WAA    AAA    AAA    AAW
+WA    AAAAA  AAAAA    AW
+W      AAA    AAA      W
+W       A      A       W
+W  A                A  W
+W AAA  Q        Q  AAA W
+WAAAAA            AAAAAW
+W AAA              AAA W
+W  A                A  W
+W                      W
+W                      W
+W                      W
+W  PPPPPPPPPPPPPPPPPP  W
+W PPPPPPPPPPPPPPPPPPPP W
+WPPPPPPPPPPPPPPPPPPPPPPW
+WWWWWWWWWWWWWWWWWWWWWWWW
+```
+
+**Legend**: W=Wall, A=Apple, Q=Inside spawn (players 0-1), P=Regular spawn (players 2-4)
+**Coordinates**: (column, row), 0-indexed. Columns 0-23, Rows 0-17
+
+### **Apple Patch Coordinates**:
+- Upper left corner: (1,1), (2,1), (3,1), (1,2), (2,2), (1,3)
+- Lower left: (3,6), (2,7), (3,7), (4,7), (1,8), (2,8), (3,8), (4,8), (5,8), (2,9), (3,9), (4,9), (3,10)
+- Upper center-left: (8,1), (7,2), (8,2), (9,2), (6,3), (7,3), (8,3), (9,3), (10,3), (7,4), (8,4), (9,4), (8,5)
+- Upper center-right: (15,1), (14,2), (15,2), (16,2), (13,3), (14,3), (15,3), (16,3), (17,3), (14,4), (15,4), (16,4), (15,5)
+- Lower right: (20,6), (19,7), (20,7), (21,7), (18,8), (19,8), (20,8), (21,8), (22,8), (19,9), (20,9), (21,9), (20,10)
+- Upper right corner: (20,1), (21,1), (22,1), (21,2), (22,2), (22,3)
+
+### **Environment Parameters**:
+- **Agents**: 5 selfish agents using A* pathfinding
+- **Baseline Performance**: Without norms, agents deplete all apples by timestep ~60
+- **Regrowth**: Density-dependent (0 neighbors=0%, 1=0.25%, 2=0.5%, 3+=2.5%)
+- **Respawn Radius**: 2.0 units (L2 distance)
+- **Simulation**: 1000 timesteps
+- **Compliance**: epsilon=0.0 (perfect norm compliance)
+
+### **Agent Architecture (SelfishAgent)**:
+1. **Vision System**: RGB observations → symbolic state conversion
+2. **Position Detection**: Locate self by color label in symbolic state
+3. **Apple Detection**: Find all available apples in symbolic state
+4. **Obstacle Handling**: Combine physical obstacles (walls) with norm-blocked positions
+5. **Pathfinding**: A* pathfinding with combined obstacle set to find nearest apple
+6. **Action Selection**: Take first step toward apple along calculated path
+
+### **Key Integration Points**:
+- Agents call `norm.get_blocked_positions(t)` to get norm obstacles
+- Agents combine: `all_obstacles = physical_obstacles | norm_obstacles`
+- If no path exists to any apple, agents perform NOOP action
+
+### **State Tracking Limitations**:
+- Agents have no access to live apple counts or other agents' positions
+- Norm must work with only timestep `t` and coordinate blocking
+
+---
+
+## **Your Task**
+
+Implement the MetaNorm strategy as complete Python code with tuned hyperparameters for this specific environment.
+Explain your reasoning. 
+
+### **Required Output Format**:
+```python
+from typing import Set
+from utils.norms.norm import Norm, Coord
+
+class [YourNormName](Norm):
+    """
+    [Brief description of how the MetaNorm strategy is implemented]
+    """
+    
+    def __init__(self, epsilon: float = 0.0):
+        super().__init__("[norm_name]", epsilon)
+        # Set all environment-specific hyperparameters here
+        
+    def get_blocked_positions(self, t: int) -> Set[Coord]:
+        """
+        Returns blocked positions at timestep t.
+        Implements the MetaNorm strategy for Commons Harvest Open.
+        """
+        blocked = set()
+        # Your implementation here
+        return blocked
+
+# Expose for dynamic loading
+NormClass = [YourNormName]
+```
+
+### **Technical Requirements**:
+- Must inherit from `Norm` base class
+- Must implement `get_blocked_positions(self, t: int) -> Set[Coord]`
+- Must be self-contained (no external state)
+- Must work immediately when instantiated with `NormClass(epsilon=0.0)`
+- Use type hints: `Set[Coord]` not `Set[Tuple[int, int]]`
+
+### **Performance Goal**:
+Final cumulative welfare > 600 (stretch goal > 800) over 1000 timesteps
+
+---
+
+Implement the norm based on the MetaNorm strategy above:

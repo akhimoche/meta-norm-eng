@@ -1,0 +1,441 @@
+# Iteration Prompt 2.0
+
+I need you to improve an existing norm for the Commons Harvest environment based on its performance data. Below I will include the full context that was considered to create the norm, the outputted norm, and its performance (see attached graph). Analyze the current norm's performance, identify weaknesses, and generate an improved version that maximizes social welfare (total apples collected over 1000 timesteps).
+
+# Context for Norm Creation
+
+**Game Overview:**
+Commons Harvest is a multi-agent resource management game where agents collect apples from patches. This simulates a "tragedy of the commons" scenario - if agents overexploit patches, they become permanently barren due to density-dependent regrowth mechanics. For context, in the current setup of 1000 timesteps, the 5 selfish agents eat all the apples by timestep 60. 
+
+The norm you create should maximise social welfare (total apples collected over 1000 timesteps) by strategically constraining agent movement to prevent overexploitation of apple patches while maintaining efficient resource collection.
+
+The output must be a complete Python file that can be saved directly as `utils/norms/[norm_name].py` and work immediately with my existing codebase.
+
+**Required Output Format:**
+meta_norm = {
+"verbal_explanation": "...",
+"reasoning": "...",
+"code_with_placeholders": "...",
+"hyperparameters_for_this_environment": {...}
+}
+
+**Norm Implementation Requirements:**
+
+- Must inherit from base `Norm` class using: `from .norm import Norm, Coord`
+- Must use constructor: `super().__init__("norm_name", epsilon)` where epsilon is the probability of ignoring the norm (0.0 = always obey, 1.0 = always ignore). Note that epsilon will always be set to 0.0 for these tests.
+- Must implement `get_blocked_positions(self, t: int) -> Set[Coord]` method
+- Must include all necessary imports at the top of the file
+- Must work with existing agent classes without requiring modifications to other files
+- Must handle the case where no external state tracking is available (use reasonable defaults)
+
+**Hyperparameter Handling:**
+
+- Include hyperparameters as class attributes or constructor parameters
+- The norm should work immediately when instantiated with `NormClass(epsilon=0.0)`
+- Do not require external state updates - the norm should be self-contained
+- Include docstrings explaining the norm's behaviour and hyperparameters, in the format described above.
+
+**Critical Implementation Notes:**
+
+- Use absolute imports: `from utils.norms.norm import Norm, Coord`
+- Use type hints: `Set[Coord]` not `Set[Tuple[int, int]]`
+
+**Commons Harvest Open Environment Layout**
+
+The environment uses a 24column ×18 row ASCII character map, as seen below: 
+
+**ASCII Map:**
+
+```python
+ASCII_MAP = """
+WWWWWWWWWWWWWWWWWWWWWWWW
+WAAA    A      A    AAAW
+WAA    AAA    AAA    AAW
+WA    AAAAA  AAAAA    AW
+W      AAA    AAA      W
+W       A      A       W
+W  A                A  W
+W AAA  Q        Q  AAA W
+WAAAAA            AAAAAW
+W AAA              AAA W
+W  A                A  W
+W                      W
+W                      W
+W                      W
+W  PPPPPPPPPPPPPPPPPP  W
+W PPPPPPPPPPPPPPPPPPPP W
+WPPPPPPPPPPPPPPPPPPPPPPW
+WWWWWWWWWWWWWWWWWWWWWWWW
+"""
+```
+
+This map represents the exact layout of the Commons Harvest Open environment that agents navigate and interact with.
+
+**Symbol Meanings:**
+
+- W: Wall (perimeter boundary)
+- A: Apple tree patch (grass + apple)
+- Q: Inside spawn point (closer to apples)
+- P: Regular spawn point (bottom area)
+- " " (space): Floor (empty space)
+
+- Format:
+    - (column, row) ← you will have to use this in the timestep dictionary of blocked positions
+- ASCII 1-1 mapping. 24 cols x 18 rows.
+    - Columns: 0-23, 0 and 23 are walls.
+    - Rows: 0-17, 0 and 17 are walls.
+- Apple patches:
+    - Upper left corner: 
+    (1,1), (2,1) (3,1), (1,2), (2,2), (1,3)
+    - Lower left: 
+    (3, 6), (2, 7), (3, 7), (4, 7), (1, 8), (2, 8), (3, 8), (4, 8) (5, 8), (2, 9), (3, 9), (4, 9), 
+    (3, 10)
+    - Upper left: 
+    (8, 1), (7, 2), (8, 2), (9, 2), (6, 3), (7, 3), (8, 3), (9, 3), (10, 3), (7, 4), (8, 4), (9,4), (8,5)
+    - Upper right: 
+    (15, 1), (14, 2), (15, 2), (16, 2), (13, 3), (14, 3), (15, 3), (16, 3), (17, 3), (14, 4), (15, 4), (16,4), (15,5)
+    - Lower right: 
+    (20, 6), (19, 7), (20, 7), (21, 7), (18, 8), (19, 8), (20, 8), (21, 8) (22, 8), (19, 9), (20, 9), (21, 9), (20, 10)
+    - Upper right corner: 
+    (20,1), (21,1) (22,1), (21,2), (22,2), (22,3)
+
+**Apple Regrowth Mechanism:**
+
+Apples that are consumed regrow with a per-step probability that depends on the number of uneaten apples in a neighbourhood around them. The regrowth system uses:
+
+- **Respawn Radius**: 2.0 units (L2 norm distance)
+- **Regrowth Probabilities**: [0.0, 0.0025, 0.005, 0.025]
+- 0 nearby apples: 0.0% chance to regrow
+- 1 nearby apple: 0.25% chance to regrow
+- 2 nearby apples: 0.5% chance to regrow
+- 3+ nearby apples: 2.5% chance to regrow
+
+**Agent Spawning Mechanism:**
+
+- Players 0 & 1 (first two slots): Always spawn at inside spawn points (Q positions)
+- Players 2+ (remaining slots): Always spawn at regular spawn points (P positions)
+- Within each spawn group, positions are randomly shuffled each episode to avoid collisions
+
+**Agent Architecture (SelfishAgent):**
+The agents are SelfishAgent instances that use A* pathfinding to find the nearest apple. Here's how they work:
+
+1. **Vision System**: Agents receive RGB observations and convert them to symbolic state using a converter
+2. **Position Detection**: Agents locate themselves by their colour label in the symbolic state
+3. **Apple Detection**: Agents find all available apples in the symbolic state
+4. **Obstacle Handling**: Agents combine physical obstacles (walls) with norm-blocked positions
+5. **Pathfinding**: Agents run A* pathfinding with the combined obstacle set to find optimal path to nearest apple
+6. **Action Selection**: Agents take the first step toward the apple along the calculated path
+
+**Key Integration Points:**
+
+- Agents call `norm.get_blocked_positions(t)` to get norm obstacles
+- Agents combine norm obstacles with physical obstacles: `all_obstacles = physical_obstacles | norm_obstacles`
+- Agents use epsilon compliance: if `random.random() < epsilon`, they ignore norm obstacles. Note that for these simulations epsilon will always be set by the experimenter as 0.0, ie perfectly norm compliant
+- Agents run A* pathfinding with the combined obstacle set
+- If no path exists to any apple, agents perform NOOP action
+
+**State Tracking Limitations:**
+
+- Agents do not have access to live apple counts or other agents' positions
+- The norm must work with only the information available to agents
+- The norm should use reasonable defaults for any missing state information
+
+# Outputted norm
+# utils/norms/gpt5.py
+# Pulse-Gated Sanctuary Norm for Commons Harvest Open environment
+
+from typing import Set
+from utils.norms.norm import Norm, Coord
+
+class PulseGatedSanctuaryNorm(Norm):
+    """
+    Pulse-Gated Sanctuary Norm
+
+    Overview
+    --------
+    A self-contained, plug-and-play norm that:
+      1) Permanently blocks a small, hand-picked set of 'sanctuary' apple tiles in each patch
+         so at least ~3 apples always remain and keep local regrowth in the highest band.
+      2) Adds a MAIN horizontal fence at row 12 with two narrow gates (left/right) that open
+         in pulses to throttle the number of agents entering the orchards from the P spawns.
+      3) Adds a TOP horizontal fence at row 6 with two narrow gates near the Q spawns; this
+         fence is closed for an initial delay and then pulses, slowing the two inside agents.
+
+    Why this works
+    --------------
+    - Density-dependent regrowth collapses if a cluster hits zero. Keeping a few apples
+      permanently uneaten preserves a 3+ neighbor regime (2.5% respawn/step), stabilizing patches.
+    - Pulsed gates prevent the whole population from rushing the same cluster simultaneously,
+      distributing harvests across time and space.
+
+    Hyperparameters (defaults tuned for Commons Harvest Open map)
+    -------------------------------------------------------------
+    - main_fence_row: int = 12
+    - top_fence_row: int = 6
+    - main_cycle: int = 80                 # full cycle length for main fence
+    - main_open_window: int = 20           # steps the left/right gate is open
+    - main_rest_window: int = 20           # recovery period between gate openings
+    - main_start_delay: int = 10           # initial settling before first opening
+    - top_start_delay: int = 150           # keep top fence closed early to spare top orchards
+    - top_cycle: int = 80
+    - top_open_window: int = 10
+    - top_rest_window: int = 30
+    - gate_columns: dict with lists        # narrow columns for each gate opening
+      • main_left_gate_cols  = [5, 6, 7]
+      • main_right_gate_cols = [16, 17, 18]
+      • top_left_gate_cols   = [6, 7]
+      • top_right_gate_cols  = [16, 17]
+
+    Usage
+    -----
+    Instantiate with `PulseGatedSanctuaryNorm(epsilon=0.0)` and pass into your agents.
+    Agents will call `get_blocked_positions(t)` each step and treat the returned set
+    as additional obstacles alongside walls.
+
+    Notes
+    -----
+    - Coordinates are (col, row), zero-indexed, matching the provided ASCII map.
+    - This norm does not require or consume any environment state beyond timestep t.
+    - Epsilon is respected by the base Norm (0.0 in your tests means always comply).
+    """
+
+    # Map dimensions (from prompt)
+    MAP_W: int = 24
+    MAP_H: int = 18
+
+    # --- FENCE & SCHEDULE HYPERPARAMETERS (safe defaults for this environment) ---
+    main_fence_row: int = 12
+    top_fence_row: int = 6
+
+    main_cycle: int = 80
+    main_open_window: int = 20
+    main_rest_window: int = 20
+    main_start_delay: int = 10
+
+    top_start_delay: int = 150
+    top_cycle: int = 80
+    top_open_window: int = 10
+    top_rest_window: int = 30
+
+    # Gate columns (narrow)
+    main_left_gate_cols = [5, 6, 7]
+    main_right_gate_cols = [16, 17, 18]
+    top_left_gate_cols = [6, 7]
+    top_right_gate_cols = [16, 17]
+
+    def __init__(self, epsilon: float = 0.0) -> None:
+        super().__init__("pulse_gated_sanctuary", epsilon)
+
+        # --- PERMANENT SANCTUARIES ---
+        # Hand-picked 'seed' apples to preserve per patch (never enter/harvest these tiles).
+        # These are all valid apple coordinates from the prompt; we protect ~3 per cluster.
+        self._sanctuaries: Set[Coord] = {
+            # Upper-left corner patch
+            (2, 1), (1, 2), (2, 2),
+            # Upper-left (mid-left) big patch
+            (7, 3), (8, 3), (9, 3),
+            # Lower-left patch
+            (2, 8), (3, 8), (4, 8),
+            # Upper-right (mid-right) big patch
+            (14, 3), (15, 3), (16, 3),
+            # Lower-right patch
+            (19, 8), (20, 8), (21, 8),
+            # Upper-right corner patch
+            (21, 1), (21, 2), (22, 2),
+        }
+
+        # Precompute full horizontal fence coordinate sets (excluding outer walls)
+        self._main_fence_full = {(c, self.main_fence_row) for c in range(1, self.MAP_W - 1)}
+        self._top_fence_full = {(c, self.top_fence_row) for c in range(1, self.MAP_W - 1)}
+
+        # Convert gate column lists to sets at the appropriate fence rows
+        self._main_left_gate = {(c, self.main_fence_row) for c in self.main_left_gate_cols}
+        self._main_right_gate = {(c, self.main_fence_row) for c in self.main_right_gate_cols}
+        self._top_left_gate = {(c, self.top_fence_row) for c in self.top_left_gate_cols}
+        self._top_right_gate = {(c, self.top_fence_row) for c in self.top_right_gate_cols}
+
+        # Defensive: ensure we never accidentally block the outer walls (0 or MAP_W-1)
+        assert all(1 <= c <= self.MAP_W - 2 for c, _ in self._main_fence_full)
+        assert all(1 <= c <= self.MAP_W - 2 for c, _ in self._top_fence_full)
+
+    # --- Public API expected by the agents -------------------------------------------------
+    def get_blocked_positions(self, t: int) -> Set[Coord]:
+        """
+        Return a set of (col, row) coordinates that are blocked by the norm at timestep t.
+        This is combined by the agent with physical obstacles for A* pathfinding.
+        """
+        blocked: Set[Coord] = set()
+
+        # 1) Permanent sanctuaries (always blocked)
+        blocked |= self._sanctuaries
+
+        # 2) Main fence at row 12: pulsed left/right gates
+        blocked |= self._main_fence_positions(t)
+
+        # 3) Top fence at row 6: delayed + pulsed gates near the Q spawns
+        blocked |= self._top_fence_positions(t)
+
+        return blocked
+
+    # --- Internal helpers -----------------------------------------------------------------
+    def _main_fence_positions(self, t: int) -> Set[Coord]:
+        """
+        Compute blocked coords for the main fence at row 12 with pulsed gates.
+        Before main_start_delay, the fence is fully closed (no gates open).
+        Thereafter, the cycle is:
+            [open left for main_open_window]
+            [closed for main_rest_window]
+            [open right for main_open_window]
+            [closed for main_rest_window]
+        """
+        if t < self.main_start_delay:
+            # fully closed
+            return set(self._main_fence_full)
+
+        # Determine phase within the main cycle
+        phase = (t - self.main_start_delay) % self.main_cycle
+        left_open_span = self.main_open_window
+        left_rest_end = left_open_span + self.main_rest_window
+        right_open_end = left_rest_end + self.main_open_window
+        full_cycle_end = right_open_end + self.main_rest_window  # should equal main_cycle
+
+        # Start with full fence, then remove whichever gate is open in this phase
+        blocked = set(self._main_fence_full)
+        if phase < left_open_span:
+            # Open LEFT gate
+            blocked -= self._main_left_gate
+        elif phase < left_rest_end:
+            # Both closed (recovery)
+            pass
+        elif phase < right_open_end:
+            # Open RIGHT gate
+            blocked -= self._main_right_gate
+        elif phase < full_cycle_end:
+            # Both closed (recovery)
+            pass
+        else:
+            # Shouldn't happen, but keep closed
+            pass
+        return blocked
+
+    def _top_fence_positions(self, t: int) -> Set[Coord]:
+        """
+        Compute blocked coords for the top fence at row 6.
+        For t < top_start_delay: fully closed.
+        After that, pulse short openings near the Q spawns:
+            [open left gate for top_open_window]
+            [closed for top_rest_window]
+            [open right gate for top_open_window]
+            [closed for top_rest_window]
+        """
+        if t < self.top_start_delay:
+            return set(self._top_fence_full)
+
+        phase = (t - self.top_start_delay) % self.top_cycle
+        left_open_span = self.top_open_window
+        left_rest_end = left_open_span + self.top_rest_window
+        right_open_end = left_rest_end + self.top_open_window
+        full_cycle_end = right_open_end + self.top_rest_window  # equals top_cycle
+
+        blocked = set(self._top_fence_full)
+        if phase < left_open_span:
+            blocked -= self._top_left_gate
+        elif phase < left_rest_end:
+            pass
+        elif phase < right_open_end:
+            blocked -= self._top_right_gate
+        elif phase < full_cycle_end:
+            pass
+        else:
+            pass
+        return blocked
+
+# Meta information for reference
+meta_norm = {
+    "verbal_explanation": (
+        "Pulse-Gated Sanctuary Norm: we create two timed 'fences' that throttle entry to "
+        "the orchards and permanently protect a few 'seed' apples inside each patch. "
+        "A main fence across row 12 opens small left/right gates in pulses so not all "
+        "agents flood the top at once. A secondary fence across row 6 delays access from "
+        "the inside spawns to the fragile topmost orchards. Sanctuaries (blocked apple "
+        "tiles) keep a handful of apples forever uneaten so neighboring tiles retain a "
+        "high regrowth probability (≥3 neighbors → 2.5% per step). Together this prevents "
+        "early overharvest while still letting agents efficiently collect apples over time."
+    ),
+    "reasoning": (
+        "In this map, five selfish A* agents quickly wipe out apples (~60 steps) because "
+        "everyone beelines to the same dense clusters. Regrowth needs nearby apples; after "
+        "a cluster collapses, density-dependent respawn falls to near zero. Without live "
+        "state, the best lever is movement constraints via blocked coordinates. We therefore: "
+        "(1) Permanently preserve 3 'seed' apples in each patch so densities never hit zero, "
+        "maintaining 2.5% regrowth in their neighborhood. "
+        "(2) Insert a horizontal fence at row 12 (above the P spawns) with narrow gates that "
+        "alternate (left/right) in short pulses separated by recovery rests. This staggers "
+        "traffic so collection is spread out both spatially and temporally. "
+        "(3) Add a second fence at row 6 (just below the top orchards) that remains closed "
+        "for an initial delay to keep the two Q-spawn agents from instantly emptying the "
+        "most fragile top clusters; after the delay it also pulses small gates near those "
+        "spawns. All parameters are static and time-based, requiring no external state. "
+        "Epsilon=0.0 ensures full compliance, maximizing long-run social welfare by trading "
+        "a small early slowdown for sustained, regenerating harvests."
+    ),
+    "code_with_placeholders": r'''
+
+
+# Expose a convenient alias for experimenters
+NormClass = PulseGatedSanctuaryNorm
+''',
+    "hyperparameters_for_this_environment": {
+        "name": "pulse_gated_sanctuary",
+        "map_size": [24, 18],
+        "main_fence_row": 12,
+        "top_fence_row": 6,
+        "main_cycle": 80,
+        "main_open_window": 20,
+        "main_rest_window": 20,
+        "main_start_delay": 10,
+        "top_start_delay": 150,
+        "top_cycle": 80,
+        "top_open_window": 10,
+        "top_rest_window": 30,
+        "main_left_gate_cols": [5, 6, 7],
+        "main_right_gate_cols": [16, 17, 18],
+        "top_left_gate_cols": [6, 7],
+        "top_right_gate_cols": [16, 17],
+        "sanctuaries": sorted([
+            (2, 1), (1, 2), (2, 2),
+            (7, 3), (8, 3), (9, 3),
+            (2, 8), (3, 8), (4, 8),
+            (14, 3), (15, 3), (16, 3),
+            (19, 8), (20, 8), (21, 8),
+            (21, 1), (21, 2), (22, 2),
+        ]),
+        "epsilon_default": 0.0
+    }
+}
+
+
+
+## IMPROVEMENT TASK
+
+**Your Task:**
+
+1. **Analyze** the current norm's performance data
+2. **Identify** specific weaknesses or failure modes
+3. **Design** an improved norm that addresses these weaknesses
+4. **Output** the complete improved Python code
+
+### OUTPUT FORMAT
+
+Please provide:
+
+1. **Analysis and reasoning** (2-3 paragraphs):
+    - What weakness did you identify in the current norm?
+    - What specific changes will address these weaknesses?
+2. **Complete Python Code** (ready to save as `utils/norms/improved_norm.py`):
+    - Full implementation with all imports
+    - Clear docstring explaining the improvement
+    - Include hyperparameters as class attributes with comments
+3. **Expected Improvement** (1 paragraph):
+    - What performance gains do you expect?
+    - Why should this outperform the previous version?

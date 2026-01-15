@@ -20,7 +20,6 @@ from agents.selfish import SelfishAgent
 from env.mp_llm_env import LLMPrepObject # this is probly overcomplicated, might remove later
 from utils.proc_funcs import get_changes_diff
 from utils.operator_funcs import get_north
-from utils.norms.temporal_top_half import TemporalTopHalf  # Hard import for testing
 from meltingpot import substrate
 
 # Configure matplotlib backend for macOS compatibility
@@ -30,36 +29,23 @@ matplotlib.use("TkAgg")
 # Also, suggestion to log these under a @dataclass? class ExperimentConfig: ... overkill? 
 env_name = "commons_harvest__open"
 num_players = 5
-window_size = 50 # Agreed upon standard for exeperiments is 1000 timesteps. 
+window_size = 1000 # Agreed upon standard for exeperiments is 1000 timesteps. 
 interactive = True  # Debug tool - compartmentalize later
 save_data = False  # Set to True to save experiment data to data/ folder
 
 # Agent configuration
 agent_types = [SelfishAgent] * num_players  
 
-# Norm configuration - SELECT YOUR NORM HERE. Need to make this more clean/automated.
-# Available norms: "static_blocker", "temporal_blocker", "temporal_top_half", "apple_reserve", or None for no norm
-norm_type = "temporal_top_half"  # Set to "static_blocker", "temporal_blocker", "temporal_top_half", or "apple_reserve" to enable norms
-
+# Norm configuration - SELECT YOUR NORM HERE
+# Available norms: Use utils.norms.loader.print_available_norms() to see all options
+norm_type = "gpt5iteration2.0"  # Options: "gpt5", "claude", "temporal_top_half", etc., or "None" for baseline
 # Epsilon settings for norm compliance (0.0 = always obey, 1.0 = always ignore)
 epsilon_all = 0.0  # Default epsilon for all agents
 epsilon_overrides = {}  # Per-agent overrides: {"0": 0.2, "3": 0.5}
 
-# Norm setup - create the norm instance (need to make imoprts of this more efficeint/automated)
-if norm_type == "static_blocker":
-    from utils.norms.static_blocker import StaticBlocker
-    norm = StaticBlocker(epsilon=epsilon_all)
-elif norm_type == "temporal_blocker":
-    from utils.norms.temporal_blocker import TemporalBlocker
-    norm = TemporalBlocker(epsilon=epsilon_all)
-elif norm_type == "temporal_top_half":
-    from utils.norms.temporal_top_half import TemporalTopHalf
-    norm = TemporalTopHalf(epsilon=epsilon_all)
-elif norm_type == "apple_reserve":
-    from utils.norms.static_apple_blocker import AppleReserve
-    norm = AppleReserve(epsilon=epsilon_all)
-else:
-    norm = None
+# Norm setup - dynamically load the norm using auto-discovery
+from utils.norms.loader import get_norm
+norm = get_norm(norm_type, epsilon=epsilon_all)
 
 # Section 2: Environment setup
 roles = ["default"] * num_players

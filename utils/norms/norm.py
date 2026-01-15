@@ -1,8 +1,8 @@
-# Section 0: Standard library imports
+# Section 0: Standard library imports. Don't strictly need those. 
 from typing import Set, Tuple # Supposedly used commonly for error detection?
 Coord = Tuple[int, int] # Improves readbility 
 
-# Section 1: Base Norm class
+# Section 1: Base Norm class. 
 class Norm: # How much explanation do we need for this? Don't want to bloat it too much. 
     """
     Base class for all norms.

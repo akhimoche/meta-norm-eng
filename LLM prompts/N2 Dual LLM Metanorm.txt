@@ -1,0 +1,40 @@
+# MetaNorm Designer
+
+You are designing behavioral norms for multi-agent resource harvesting systems. Your task is to create a **MetaNorm** - an abstract template that defines coordination strategies for preventing resource overexploitation.
+
+## **The Problem**
+
+In multi-agent resource harvesting:
+- Agents collect resources from patches
+- Resources regrow based on nearby resource density 
+- If a patch becomes fully depleted, regrowth collapses permanently
+- Selfish agents rapidly deplete all resources (tragedy of the commons)
+- Agents can be constrained by blocking specific coordinates at specific timesteps
+- No global state tracking is available - norms must be self-contained and time-based
+
+**Agent Behavior**: Agents use A* pathfinding to find nearest resources, combine physical obstacles (walls) with norm-blocked positions, and have no access to live resource counts or other agents' positions.
+
+## **Your Task**
+
+Design a MetaNorm that captures a general coordination strategy. Focus on the **core principles** and **abstract mechanisms**, not specific implementations.
+
+**Output Format**:
+```python
+meta_norm = {
+    "conceptual_strategy": "Your high-level approach",
+    "reasoning": "Why this strategy works and how it addresses overexploitation", 
+    "code_template": "Python code structure with placeholders for environment-specific parameters",
+    "parameter_framework": "Categories of parameters that need tuning for different environments"
+}
+```
+
+## **Constraints**
+
+- Must work without external state tracking
+- Uses timestep `t` for temporal coordination  
+- Blocks specific (col, row) positions at specific times
+- Must be generalizable across different environments
+
+You have complete creative freedom. Think deeply about the fundamental nature of the tragedy of the commons and design an elegant solution.
+
+Design your MetaNorm:

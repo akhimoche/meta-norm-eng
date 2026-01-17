@@ -36,14 +36,17 @@ def load_experiment_data(experiment_name: str):
     }
 
 
-def compute_mean_std_cumulative(cumulative_runs: np.ndarray):
+def compute_mean_std_cumulative(cumulative_runs: np.ndarray, per_capita: bool = False, num_players: int = 1):
     """Return mean and std across runs for cumulative welfare."""
     mean_curve = np.mean(cumulative_runs, axis=0)
     std_curve = np.std(cumulative_runs, axis=0)
+    if per_capita and num_players > 0:
+        mean_curve = mean_curve / num_players
+        std_curve = std_curve / num_players
     return mean_curve, std_curve
 
 
-def overlay_plot(experiment_names, shade_std: bool = True, save_path: Path | None = None):
+def overlay_plot(experiment_names, shade_std: bool = True, save_path: Path | None = None, per_capita: bool = False):
     """Plot mean cumulative welfare curves for multiple experiments on one figure.
 
     Args:
@@ -54,9 +57,14 @@ def overlay_plot(experiment_names, shade_std: bool = True, save_path: Path | Non
     datasets = []
     for exp in experiment_names:
         data = load_experiment_data(exp)
-        mean_curve, std_curve = compute_mean_std_cumulative(data["cumulative_welfare"])
         cfg = data["config"]["config"]
-        label = f"{cfg['env_name']} | {cfg['norm_type']} (ε={cfg['epsilon']})"
+        num_players = int(cfg.get("num_players", 1))
+        mean_curve, std_curve = compute_mean_std_cumulative(
+            data["cumulative_welfare"],
+            per_capita=per_capita,
+            num_players=num_players
+        )
+        label = f"{cfg['env_name']} | {cfg['norm_type']} (ε={cfg['epsilon']}, n={num_players})"
         datasets.append({
             "label": label,
             "mean": mean_curve,
@@ -96,8 +104,10 @@ def overlay_plot(experiment_names, shade_std: bool = True, save_path: Path | Non
             )
 
     ax.set_xlabel("Timestep", fontsize=12)
-    ax.set_ylabel("Cumulative Social Welfare", fontsize=12)
-    ax.set_title("Cumulative Welfare Comparison Across Experiments", fontsize=14)
+    y_label = "Cumulative Reward per Capita" if per_capita else "Cumulative Social Welfare"
+    title = "Per-Capita Cumulative Reward Comparison" if per_capita else "Cumulative Welfare Comparison Across Experiments"
+    ax.set_ylabel(y_label, fontsize=12)
+    ax.set_title(title, fontsize=14)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper left", fontsize=10)
 
@@ -106,7 +116,8 @@ def overlay_plot(experiment_names, shade_std: bool = True, save_path: Path | Non
     # Save
     if save_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = ROOT_DIR / "data" / f"results_overlay_{timestamp}.png"
+        suffix = "per_capita_" if per_capita else ""
+        save_path = ROOT_DIR / "data" / f"results_overlay_{suffix}{timestamp}.png"
     save_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Overlay plot saved to: {save_path}")
@@ -133,6 +144,10 @@ def main():
         "--no-std",
         action="store_true",
         help="Disable ±1 std shading")
+    parser.add_argument(
+        "--per-capita",
+        action="store_true",
+        help="Plot cumulative reward per capita (divide by num_players)")
     parser.add_argument(
         "--save",
         type=str,
@@ -165,7 +180,7 @@ def main():
             sys.exit(1)
 
     save_path = Path(args.save) if args.save else None
-    overlay_plot(exps, shade_std=not args.no_std, save_path=save_path)
+    overlay_plot(exps, shade_std=not args.no_std, save_path=save_path, per_capita=args.per_capita)
 
 
 if __name__ == "__main__":

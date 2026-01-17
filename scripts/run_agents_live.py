@@ -7,6 +7,7 @@ from pathlib import Path
 # Third-party imports
 import numpy as np
 import matplotlib
+from collections import Counter
 import matplotlib.pyplot as plt
 
 # Add project root to Python path for imports (hack, should be resolved)
@@ -28,8 +29,8 @@ matplotlib.use("TkAgg")
 # Section 1: Configuration (MOVE ALL TO RUN EXPERIMENT.Py?), or after creating env? 
 # Also, suggestion to log these under a @dataclass? class ExperimentConfig: ... overkill? 
 env_name = "commons_harvest__open"
-num_players = 5
-window_size = 200 # Agreed upon standard for exeperiments is 1000 timesteps. 
+num_players = 7
+window_size = 500 # Agreed upon standard for exeperiments is 1000 timesteps. 
 interactive = True  # Debug tool - compartmentalize later
 save_data = False  # Set to True to save experiment data to data/ folder
 
@@ -38,10 +39,11 @@ agent_types = [SelfishAgent] * num_players
 
 # Norm configuration - SELECT YOUR NORM HERE
 # Available norms: Use utils.norms.loader.print_available_norms() to see all options
-norm_type = "static_apple_blocker"  # Options: "gpt5", "claude", "temporal_top_half", etc., or "None" for baseline
+norm_type = "sacred_apples"  # Options: "gpt5", "claude", "temporal_top_half", etc., or "None" for baseline
 # Epsilon settings for norm compliance (0.0 = always obey, 1.0 = always ignore)
-epsilon_all = 0.2 
+epsilon_all = 0.2 # Remember! 80% compliance is epsilon 0.2
 epsilon_overrides = {}  # Per-agent overrides: {"0": 0.2, "3": 0.5}
+
 
 # Norm setup - dynamically load the norm using auto-discovery
 from utils.norms.loader import get_norm
@@ -120,6 +122,7 @@ social_welfare = []
 done = False
 t = 0
 
+
 # Animation Setup (Optional), Compartmentalise as a debug tool later/visualisation.py in utils? 
 if interactive:
     plt.ion()
@@ -131,6 +134,8 @@ while not done and t < window_size:
     if norm is not None and hasattr(norm, 'update_timestep'):
         norm.update_timestep(t)
     
+    # Compute current agent positions from RGB
+
     # Get actions from all agents and step the environment
     actions = [agent.act(obs, t) for agent in agents]
     timestep_data = env.step(actions)
@@ -182,3 +187,4 @@ ax2.set(
 )
 ax2.grid(True)
 plt.show()
+

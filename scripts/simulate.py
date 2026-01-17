@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 from dataclasses import dataclass
+from collections import Counter
 from typing import Optional
 
 # Third-party imports
@@ -30,7 +31,7 @@ class SimulationConfig:
     epsilon: float
     agent_type: str = "selfish"  # Options: "selfish" (more types coming soon)
     num_players: int = 5
-    timesteps: int = 1000
+    timesteps: int = 500
     seed: Optional[int] = None  # Optional: Set if you need reproducible randomness
                                  # If runs look too similar, use different seeds per run
 
@@ -129,12 +130,15 @@ def run_simulation(config: SimulationConfig) -> dict:
     social_welfare = []
     done = False
     t = 0
+
     
     while not done and t < config.timesteps:
         # Update norm timestep if it exists
         if norm is not None and hasattr(norm, 'update_timestep'):
             norm.update_timestep(t)
         
+        # Compute current agent positions from RGB
+
         # Get actions from all agents and step the environment
         actions = [agent.act(obs, t) for agent in agents]
         timestep_data = env.step(actions)

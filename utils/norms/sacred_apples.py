@@ -2,8 +2,8 @@
 from typing import Set
 from utils.norms.norm import Norm, Coord
 
-# Section 1: AppleReserve norm
-class AppleReserve(Norm):
+# Section 1: SacredApples norm
+class SacredApples(Norm):
     """
     A norm that permanently blocks specific apple positions for the entire simulation.
     
@@ -13,12 +13,12 @@ class AppleReserve(Norm):
     
     Example usage:
         # Block specific apple positions permanently (positions are hardcoded in the norm)
-        norm = StaticAppleBlocker(epsilon=0.1)
+        norm = SacredApples(epsilon=0.1)
     """
     
     def __init__(self, epsilon: float):
         """
-        Initialize a static apple blocker norm.
+        Initialize a sacred apples norm.
         
         Args:
             epsilon: Probability of ignoring this norm (0.0 = always obey, 1.0 = always ignore)
@@ -26,7 +26,7 @@ class AppleReserve(Norm):
             Maybe remove references to epsilon here? but they still take the valur form driver 
             file and run with it?  
         """
-        super().__init__("apple_reserve", epsilon)
+        super().__init__("sacred_apples", epsilon)
         
         # Hardcoded: block specific apple positions permanently
         self.blocked_apple_positions = {

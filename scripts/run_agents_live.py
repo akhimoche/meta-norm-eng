@@ -29,8 +29,8 @@ matplotlib.use("TkAgg")
 # Section 1: Configuration (MOVE ALL TO RUN EXPERIMENT.Py?), or after creating env? 
 # Also, suggestion to log these under a @dataclass? class ExperimentConfig: ... overkill? 
 env_name = "commons_harvest__open"
-num_players = 7
-window_size = 500 # Agreed upon standard for exeperiments is 1000 timesteps. 
+num_players = 5
+window_size = 200 # Agreed upon standard for exeperiments is 1000 timesteps. 
 interactive = True  # Debug tool - compartmentalize later
 save_data = False  # Set to True to save experiment data to data/ folder
 
@@ -39,7 +39,8 @@ agent_types = [SelfishAgent] * num_players
 
 # Norm configuration - SELECT YOUR NORM HERE
 # Available norms: Use utils.norms.loader.print_available_norms() to see all options
-norm_type = "sacred_apples"  # Options: "gpt5", "claude", "temporal_top_half", etc., or "None" for baseline
+# Options: See norm names, or "None" for baseline
+norm_type = "sacred_apples"  
 # Epsilon settings for norm compliance (0.0 = always obey, 1.0 = always ignore)
 epsilon_all = 0.2 # Remember! 80% compliance is epsilon 0.2
 epsilon_overrides = {}  # Per-agent overrides: {"0": 0.2, "3": 0.5}

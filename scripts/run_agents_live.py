@@ -40,7 +40,7 @@ agent_types = [SelfishAgent] * num_players
 # Norm configuration - SELECT YOUR NORM HERE
 # Available norms: Use utils.norms.loader.print_available_norms() to see all options
 # Options: See norm names, or "None" for baseline
-norm_type = "sacred_apples"  
+norm_type = "gemini_allornothing"  
 # Epsilon settings for norm compliance (0.0 = always obey, 1.0 = always ignore)
 epsilon_all = 0.2 # Remember! 80% compliance is epsilon 0.2
 epsilon_overrides = {}  # Per-agent overrides: {"0": 0.2, "3": 0.5}

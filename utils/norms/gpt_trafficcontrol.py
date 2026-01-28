@@ -141,13 +141,13 @@ class TrafficLightGatesNorm(Norm):
         self,
         epsilon: float = 0.0,
         *,
-        warmup_steps: int = 25,
-        window_len: int = 20,
-        left_door_cols: Tuple[int, ...] = (5, 6),
-        right_door_cols: Tuple[int, ...] = (17, 18),
-        center_door_cols: Tuple[int, ...] = (11, 12),
+        warmup_steps: int = 10,  # Shorter warmup = gates activate sooner
+        window_len: int = 30,  # Longer windows = more time spent in REST
+        left_door_cols: Tuple[int, ...] = (5,),  # Single-tile doors = tighter chokepoint
+        right_door_cols: Tuple[int, ...] = (18,),  # Single-tile doors
+        center_door_cols: Tuple[int, ...] = (11,),  # Single-tile door
         divider_col: int = 12,
-        divider_door_rows: Tuple[int, ...] = (12,),
+        divider_door_rows: Tuple[int, ...] = (),  # NO divider doors = permanent wall
     ):
         super().__init__("traffic_light_gates", epsilon)
 
@@ -176,10 +176,9 @@ class TrafficLightGatesNorm(Norm):
         # Blockable tiles are walkable non-apple spaces, excluding spawn tiles (avoid blocking start positions).
         self._blockable: Set[Coord] = set(self._spaces) - set(self._apples) - set(self._q_spawns) - set(self._p_spawns)
 
-        # Define the south gate-line row as: row just above the first P row.
-        p_rows = [y for (_, y) in self._p_spawns]
-        self.south_gate_row = (min(p_rows) - 1) if p_rows else 13
-        self.south_gate_row = max(1, min(self.south_gate_row, h - 2))
+        # Define the south gate-line row: moved up to row 8 (inside the apple area)
+        # This creates a hard barrier agents must pass through to reach upper patches
+        self.south_gate_row = 8
 
         # South gate-line base barrier: all blockable tiles across that row (usually columns 1..w-2).
         self._south_barrier_base: Set[Coord] = {
@@ -325,15 +324,16 @@ meta_norm = {
     ),
     "code_with_placeholders": "See TrafficLightGatesNorm class implementation above.",
     "hyperparameters_for_this_environment": {
-        "warmup_steps": 25,
-        "window_len": 20,
-        "left_door_cols": [5, 6],
-        "right_door_cols": [17, 18],
-        "center_door_cols": [11, 12],
+        "warmup_steps": 10,  # Quick warmup
+        "window_len": 30,  # Longer windows
+        "left_door_cols": [5],  # Single-tile doors (tighter chokepoints)
+        "right_door_cols": [18],
+        "center_door_cols": [11],
         "divider_col": 12,
-        "divider_door_rows": [12],
+        "divider_door_rows": [],  # Permanent wall - no doors
+        "south_gate_row": 8,  # Inside apple area
         "schedule_summary": {
-            "cycle_len": "4 * window_len = 80",
+            "cycle_len": "4 * window_len = 120",
             "windows": ["LEFT", "RIGHT", "REST", "MIX"]
         }
     }

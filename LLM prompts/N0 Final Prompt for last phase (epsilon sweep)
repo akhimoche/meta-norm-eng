@@ -1,0 +1,137 @@
+I need you to create a plug-and-play norm for the Commons Harvest environment.
+
+**Game Overview:**
+Commons Harvest is a multi-agent resource management game where agents collect apples from patches. The core challenge is the "tragedy of the commons" - if agents over-exploit patches, they become permanently barren due to density-dependent regrowth mechanics. For context, in the current setup of 500 timesteps, the 5 selfish agents eat all the apples by timestep 60.
+
+The norm you create should maximize social welfare (total apples collected) by strategically constraining agent movement to prevent overexploitation of apple patches while maintaining efficient resource collection. There is a probability, epsilon, that at any one timestep an agent will ignore the norm and not exclude the cells specified by the norm, so the norm MUST be robust across a range of epsilon values (0.5, 0.6, 0.7, 0.8, 0.9) WHILE achieving high social welfare.
+
+The output must be a complete Python file that can be saved directly as `utils/norms/[norm_name].py` and work immediately with my existing codebase. 
+
+**Norm Implementation Requirements:**
+
+- Must inherit from base `Norm` class using: `from .norm import Norm, Coord`
+- Must use constructor: `super().__init__("norm_name", epsilon)` where epsilon is the probability of ignoring the norm (0.0 = always obey, 1.0 = always ignore).
+- Must implement `get_blocked_positions(self, t: int) -> Set[Coord]` method
+- Must include all necessary imports at the top of the file
+- Must work with existing agent classes without requiring modifications to other files
+- Must handle the case where no external state tracking is available (use reasonable defaults)
+
+**Hyperparameter Handling:**
+
+- Include hyperparameters as class attributes or constructor parameters
+- The norm should work immediately when instantiated with `NormClass(epsilon=0.0)`
+- Do not require external state updates - the norm should be self-contained
+- Include docstrings explaining the norm's behaviour and hyperparameters, in the format described above.
+
+**Critical Implementation Notes:**
+
+- Use absolute imports: `from utils.norms.norm import Norm, Coord`
+- Use type hints: `Set[Coord]` not `Set[Tuple[int, int]]`
+
+**Commons Harvest Open Environment Layout**
+
+The environment uses a 24 column ×18 row ASCII character map, as seen below:
+
+**ASCII Map:**
+
+```python
+ASCII_MAP = """
+WWWWWWWWWWWWWWWWWWWWWWWW
+WAAA    A      A    AAAW
+WAA    AAA    AAA    AAW
+WA    AAAAA  AAAAA    AW
+W      AAA    AAA      W
+W       A      A       W
+W  A                A  W
+W AAA  Q        Q  AAA W
+WAAAAA            AAAAAW
+W AAA              AAA W
+W  A                A  W
+W                      W
+W                      W
+W                      W
+W  PPPPPPPPPPPPPPPPPP  W
+W PPPPPPPPPPPPPPPPPPPP W
+WPPPPPPPPPPPPPPPPPPPPPPW
+WWWWWWWWWWWWWWWWWWWWWWWW
+"""
+
+```
+
+This map represents the exact layout of the Commons Harvest Open environment that agents navigate and interact with.
+
+**Symbol Meanings:**
+
+- W: Wall (perimeter boundary)
+- A: Apple tree patch (grass + apple)
+- Q: Inside spawn point (closer to apples)
+- P: Regular spawn point (bottom area)
+- " " (space): Floor (empty space)
+- Format:
+    - (column, row) ← you will have to use this in the timestep dictionary of blocked positions
+- ASCII 1-1 mapping. 24 cols x 18 rows.
+    - Columns: 0-23, 0 and 23 are walls.
+    - Rows: 0-17, 0 and 17 are walls.
+- Apple patches:
+    - Upper left corner:
+    (1,1), (2,1) (3,1), (1,2), (2,2), (1,3)
+    - Lower left:
+    (3, 6), (2, 7), (3, 7), (4, 7), (1, 8), (2, 8), (3, 8), (4, 8) (5, 8), (2, 9), (3, 9), (4, 9),
+    (3, 10)
+    - Upper left:
+    (8, 1), (7, 2), (8, 2), (9, 2), (6, 3), (7, 3), (8, 3), (9, 3), (10, 3), (7, 4), (8, 4), (9,4), (8,5)
+    - Upper right:
+    (15, 1), (14, 2), (15, 2), (16, 2), (13, 3), (14, 3), (15, 3), (16, 3), (17, 3), (14, 4), (15, 4), (16,4), (15,5)
+    - Lower right:
+    (20, 6), (19, 7), (20, 7), (21, 7), (18, 8), (19, 8), (20, 8), (21, 8) (22, 8), (19, 9), (20, 9), (21, 9), (20, 10)
+    - Upper right corner:
+    (20,1), (21,1) (22,1), (21,2), (22,2), (22,3)
+
+**Apple Regrowth Mechanism:**
+
+Apples that are consumed regrow with a per-step probability that depends on the number of uneaten apples in a neighbourhood around them. The regrowth system uses:
+
+- **Respawn Radius**: 2.0 units (L2 norm distance)
+- **Regrowth Probabilities**: [0.0, 0.0025, 0.005, 0.025]
+- 0 nearby apples: 0.0% chance to regrow
+- 1 nearby apple: 0.25% chance to regrow
+- 2 nearby apples: 0.5% chance to regrow
+- 3+ nearby apples: 2.5% chance to regrow
+
+**Agent Spawning Mechanism:**
+
+- Players 0 & 1 (first two slots): Always spawn at inside spawn points (Q positions)
+- Players 2+ (remaining slots): Always spawn at regular spawn points (P positions)
+- Within each spawn group, positions are randomly shuffled each episode to avoid collisions
+
+**Agent Architecture (SelfishAgent):**
+The agents are SelfishAgent instances that use A* pathfinding to find the nearest apple. Here's how they work:
+
+1. **Vision System**: Agents receive RGB observations and convert them to symbolic state using a converter
+2. **Position Detection**: Agents locate themselves by their colour label in the symbolic state
+3. **Apple Detection**: Agents find all available apples in the symbolic state
+4. **Obstacle Handling**: Agents combine physical obstacles (walls) with norm-blocked positions
+5. **Pathfinding**: Agents run A* pathfinding with the combined obstacle set to find optimal path to nearest apple
+6. **Action Selection**: Agents take the first step toward the apple along the calculated path
+
+**Key Integration Points:**
+
+- Agents call `norm.get_blocked_positions(t)` to get norm obstacles
+- Agents combine norm obstacles with physical obstacles: `all_obstacles = physical_obstacles | norm_obstacles`
+- Agents use epsilon compliance: if `random.random() < epsilon`, they ignore norm obstacles. Note that for these simulations epsilon will always be set by the experimenter as 0.0, ie perfectly norm compliant
+- Agents run A* pathfinding with the combined obstacle set
+- If no path exists to any apple, agents perform NOOP action
+
+**State Tracking Limitations:**
+
+- Agents do not have access to live apple counts or other agents' positions
+- The norm must work with only the information available to agents
+- The norm should use reasonable defaults for any missing state information
+
+As an example, we have a hard-coded norm that constantly blocks 3 specific apples on each patch. At high epsilon, this norm gets violated and the apples get eaten. At first, I want you to generate 5 conceptually different norm types and then select one norm at random and formulate it in code, in the **Required Output Format:**
+meta_norm = {
+"verbal_explanation": "...",
+"reasoning": "...",
+"code_with_placeholders": "...",
+"hyperparameters_for_this_environment": {...}
+}

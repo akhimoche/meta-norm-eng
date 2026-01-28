@@ -1,20 +1,23 @@
 """
-Pulsing Norm for Commons Harvest
---------------------------------
+Pulsing Norm for Commons Harvest (All-or-Nothing)
+--------------------------------------------------
 This norm implements a global temporal synchronization strategy to maximize 
-social welfare. It alternates between a 'Recovery' phase (all harvesting blocked) 
-and a 'Harvest' phase (all harvesting allowed).
+social welfare. It alternates between a short 'Harvest' burst (all harvesting allowed) 
+and a long 'Recovery' phase (all harvesting blocked).
 
 Mechanism:
-- The norm defines a total cycle length (recovery_duration + harvest_duration).
-- If the current timestep is within the 'recovery' window, ALL apples are blocked.
-- If the current timestep is within the 'harvest' window, NO apples are blocked.
+- Cycle STARTS with a very short harvest window (5 steps by default).
+- Then switches to a long recovery window (70 steps by default).
+- Ratio is 14:1 recovery:harvest - agents get brief harvesting bursts.
 
 Why this works:
-1. Max Regrowth: By stopping all consumption for 50 steps, we give the probabilistic
-   regrowth mechanics the maximum opportunity to refill the board.
-2. Coordination: It solves the prisoner's dilemma by enforcing a mandatory 
-   cooperation period.
+1. Apples start at max capacity: Starting with harvest lets agents collect the
+   initial bounty before locking down.
+2. Short harvest windows: 5 steps is just enough for agents to grab some apples
+   but not enough to completely strip the patches.
+3. Long recovery: 70 steps gives regrowth mechanics maximum time to refill.
+4. High epsilon robustness: Even if some agents violate during recovery, the
+   short harvest windows limit total damage.
 """
 
 from utils.norms.norm import Norm, Coord
@@ -22,20 +25,23 @@ from typing import Set
 
 class PulsingNorm(Norm):
     def __init__(self, name: str = "pulsing_norm", epsilon: float = 0.0, 
-                 recovery_duration: int = 50, harvest_duration: int = 10):
+                 recovery_duration: int = 70, harvest_duration: int = 5):
         """
         Initializes the Pulsing Norm.
 
         Args:
             name (str): The name of the norm.
             epsilon (float): Probability (0.0 to 1.0) that an agent ignores the norm.
-            recovery_duration (int): Number of steps all apples are blocked.
-            harvest_duration (int): Number of steps apples are available.
+            recovery_duration (int): Number of steps all apples are blocked (default: 70).
+            harvest_duration (int): Number of steps apples are available (default: 5 - very short burst).
+        
+        Note: Cycle STARTS with harvest phase (since apples are at max capacity at t=0),
+              then switches to long recovery. Ratio is 14:1 recovery:harvest.
         """
         super().__init__(name, epsilon)
         self.recovery_duration = recovery_duration
         self.harvest_duration = harvest_duration
-        self.cycle_length = recovery_duration + harvest_duration
+        self.cycle_length = harvest_duration + recovery_duration  # Harvest first
         
         self.all_apples: Set[Coord] = set()
         self._initialize_apple_locations()
@@ -77,8 +83,11 @@ class PulsingNorm(Norm):
         
         Logic:
         - Calculate position in the cycle: t % cycle_length
-        - If position < recovery_duration: Block ALL apples.
-        - Else (harvest phase): Block NOTHING.
+        - If position < harvest_duration: Block NOTHING (harvest window - very short).
+        - Else (recovery phase): Block ALL apples (long recovery).
+        
+        The cycle STARTS with harvest since apples are at max capacity at t=0.
+        This allows agents to harvest the initial bounty, then enforces long recovery.
         
         Args:
             t (int): Current timestep.
@@ -88,9 +97,9 @@ class PulsingNorm(Norm):
         """
         cycle_position = t % self.cycle_length
         
-        if cycle_position < self.recovery_duration:
-            # RECOVERY PHASE: Protect everything
-            return self.all_apples
-        else:
-            # HARVEST PHASE: Free for all
+        if cycle_position < self.harvest_duration:
+            # HARVEST PHASE: Free for all (short burst at start of each cycle)
             return set()
+        else:
+            # RECOVERY PHASE: Protect everything (long regrowth period)
+            return self.all_apples.copy()

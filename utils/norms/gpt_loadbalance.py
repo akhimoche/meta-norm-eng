@@ -135,12 +135,12 @@ class LoadBalancingDetoursNorm(Norm):
         self,
         epsilon: float = 0.0,
         *,
-        phase_len: int = 35,
-        lane_rows: Tuple[int, int] = (11, 13),
-        left_lane_cols: Tuple[int, ...] = (4, 5, 6, 7),
-        center_lane_cols: Tuple[int, ...] = (10, 11, 12, 13),
-        right_lane_cols: Tuple[int, ...] = (16, 17, 18, 19),
-        bump_thickness: int = 2,
+        phase_len: int = 25,  # Faster rotation = less time to exploit any lane
+        lane_rows: Tuple[int, int] = (4, 13),  # Extended up to row 4 (into apple area)
+        left_lane_cols: Tuple[int, ...] = (2, 3, 4, 5, 6, 7, 8, 9),  # Very wide lanes
+        center_lane_cols: Tuple[int, ...] = (8, 9, 10, 11, 12, 13, 14, 15),  # Overlapping = more blocking
+        right_lane_cols: Tuple[int, ...] = (14, 15, 16, 17, 18, 19, 20, 21),  # Very wide lanes
+        bump_thickness: int = 10,  # Block full 10 rows
         mix_extra_bumps: bool = True,
     ):
         super().__init__("load_balancing_detours", epsilon)
@@ -240,12 +240,12 @@ meta_norm = {
     ),
     "code_with_placeholders": "See LoadBalancingDetoursNorm class implementation above.",
     "hyperparameters_for_this_environment": {
-        "phase_len": 35,
-        "lane_rows": [11, 13],
-        "left_lane_cols": [4, 5, 6, 7],
-        "center_lane_cols": [10, 11, 12, 13],
-        "right_lane_cols": [16, 17, 18, 19],
-        "bump_thickness": 2,
+        "phase_len": 25,  # Faster rotation
+        "lane_rows": [4, 13],  # Extended into apple area
+        "left_lane_cols": [2, 3, 4, 5, 6, 7, 8, 9],  # Very wide overlapping lanes
+        "center_lane_cols": [8, 9, 10, 11, 12, 13, 14, 15],
+        "right_lane_cols": [14, 15, 16, 17, 18, 19, 20, 21],
+        "bump_thickness": 10,  # Full 10 rows blocked
         "mix_extra_bumps": True,
         "phase_cycle": ["LEFT", "RIGHT", "CENTER", "MIX"]
     }

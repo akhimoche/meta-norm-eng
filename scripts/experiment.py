@@ -28,7 +28,7 @@ base_config = {
 }
 
 # Experiment settings
-num_simulations = 10  # Number of independent runs
+num_simulations = 100  # Number of independent runs
 
 # Sweep settings (optional)
 # Options:
@@ -40,7 +40,7 @@ num_simulations = 10  # Number of independent runs
 sweep_mode = "norms"
 
 # Epsilon values to test (used by "epsilon" and "norms" modes)
-sweep_epsilons = [0.1, 0.2, 0.3]
+sweep_epsilons = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
 
 # Agent counts to test (used by "agent_count" mode only)
 sweep_agent_counts = [3, 5, 7]
@@ -48,10 +48,8 @@ sweep_agent_counts = [3, 5, 7]
 # Norms to test (used by "norms" mode)
 # When sweep_mode = "norms": runs epsilon sweep (sweep_epsilons) FOR EACH norm below
 sweep_norms = [
-    "claude_coreprotection",
-    "claude_primecycles",
-    "gemini_checkerboard",
-    "gpt_coreprotection",
+    "debug_complete_apple_blocker",
+    "None"
     # Add more norms here as needed
 ]
 
